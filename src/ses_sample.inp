@@ -1,0 +1,20 @@
+clear
+set verbose off
+include ses.gfn
+
+# Annual exports of Algeria, 1960-2017
+open algeria.gdt --frompkg=ses --quiet
+
+# Estimate alpha and the initial level (fpp3: alpha = 0.84, l_0 = 39.5)
+bundle b = ses(Exports)
+
+# Fix alpha, hold back the last 5 observations for evaluation
+bundle opts = _(alpha=0.5, ntest=5)
+bundle b2 = ses(Exports, opts)
+
+# Five out-of-sample forecasts with intervals and plots
+dataset addobs 5
+bundle b3 = ses(Exports)
+print ses_ci_matrix(b3)
+ses_plot(&b3, 1)
+ses_plot(&b3, 2)

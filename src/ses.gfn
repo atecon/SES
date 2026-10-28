@@ -1,0 +1,597 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gretl-functions>
+<gretl-function-package name="ses" needs-time-series-data="true" minver="2024c" lives-in-subdir="true">
+<author email="atecon@posteo.de">Artur Tarassow</author>
+<version>0.1</version>
+<date>2026-10-28</date>
+<description>Simple exponential smoothing</description>
+<tags>C53</tags>
+<label>SES</label>
+<menu-attachment>MAINWIN/Variable/Filter</menu-attachment>
+<help filename="ses_help.md">
+# ses
+
+Simple exponential smoothing (ETS(A,N,N)) for gretl, following
+[fpp3, section 8.1](https://otexts.com/fpp3/ses.html).
+
+The level evolves as
+
+    l_t = alpha * y_t + (1 - alpha) * l_{t-1}
+
+The one-step forecast of `y_t` is `l_{t-1}`, and all multi-step forecasts are
+flat at the last level. The smoothing parameter `alpha` (restricted to [0,1])
+and the initial level `l_0` are estimated jointly by minimizing the sum of
+squared one-step forecast errors (BFGS with box constraints on `alpha`).
+
+Requires time-series data and gretl 2024c or later.
+
+## Public functions
+
+### `bundle ses(const series y, bundle specs[null])`
+
+Estimates the model and returns a bundle. Optional keys of `specs`:
+
+| key       | description                                                          | default |
+|-----------|----------------------------------------------------------------------|---------|
+| `alpha`   | Fixed smoothing parameter in [0,1]; if absent, it is estimated       | -       |
+| `init`    | Fixed initial level `l_0`; if absent, it is estimated                | -       |
+| `ntest`   | Number of trailing observations held back to test the forecasts      | 0       |
+| `verbose` | Verbosity, 0 to 3                                                    | 1       |
+
+The training range is the contiguous non-missing range of `y`, minus the last
+`ntest` observations. If `ntest` is 0 and the sample contains observations
+beyond the end of `y` (e.g. added by `dataset addobs`), flat out-of-sample
+forecasts are computed for them. Missing values inside `y` are an error.
+
+Returned bundle:
+
+| key          | description                                                         |
+|--------------|---------------------------------------------------------------------|
+| `alpha`      | Smoothing parameter                                                 |
+| `l0`         | Initial level                                                       |
+| `theta`      | Vector (alpha, l0)                                                  |
+| `SSE`        | Training sum of squared one-step errors                             |
+| `RMSE_train` | Training root mean squared error                                    |
+| `MAE_train`  | Training mean absolute error                                        |
+| `RMSE_test`, `MAE_test` | Test statistics, only if `ntest &gt; 0`                     |
+| `H`          | Matrix with columns `y`, `level`, `forecast` and, if there are forecasts beyond the training range, `stderr` |
+| `ntest`      | Number of test observations                                         |
+| `yname`      | Name of the series                                                  |
+| `limits`     | Vector (start of training, end of training, end of forecasts)       |
+
+In `H`, `forecast` is the one-step-ahead forecast inside the training range and
+the flat multi-step forecast beyond it. `stderr` follows fpp3 (section 8.7):
+`sigma * sqrt(1 + (h-1) * alpha^2)`, with `sigma^2 = RMSE_train^2`.
+
+With gretl 2026b or later the bundle also holds the virtual series
+`&lt;y&gt;_level`, `&lt;y&gt;_fcast` and `&lt;y&gt;_irreg`.
+
+### `void ses_plot(const bundleref b, int ptype, matrix ci_levels[null])`
+
+`ptype = 1` (default): actual and forecast, with confidence bands if forecasts
+beyond the training range exist. `ptype = 2`: level and irregular component.
+`ci_levels` holds two confidence levels between 50 and 99 (default `{80, 95}`).
+
+### `matrix ses_ci_matrix(const bundle b, matrix ci_levels[null])`
+
+Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
+`Hi95`) of the forecast intervals; requires forecasts beyond the training range.
+
+### `bundle ses_gui(...)`
+
+Graphical interface, available under *Variable &gt; Filter &gt; SES*. With `parms`
+set to `automatic`, `alpha` is estimated; with `pre-specified` the given
+`alpha` is used. The initial level is always estimated. `ntest` and `verbose`
+as above.
+
+## Example
+
+    include ses.gfn
+    open algeria.gdt --frompkg=ses
+    dataset addobs 5
+    bundle b = ses(Exports)
+    print ses_ci_matrix(b)
+    ses_plot(&amp;b, 1)
+
+## Reference
+
+Hyndman, R.J., and Athanasopoulos, G. (2021) *Forecasting: Principles and
+Practice*, 3rd edition, OTexts. &lt;https://otexts.com/fpp3/&gt;
+</help>
+<data-files count="1">
+algeria.gdt </data-files>
+<gretl-function name="ses" type="bundle">
+ <params count="2">
+  <param name="y" type="series" const="true"/>
+  <param name="specs" type="bundle" optional="true" const="true"/>
+ </params>
+<code>/* Simple exponential smoothing of series 'y'.
+
+specs.alpha:   smoothing parameter in [0,1]. If given, alpha is not
+estimated.
+specs.init:    initial level l_0. If given, l_0 is not estimated.
+specs.ntest:   number of trailing observations held back for testing
+forecasts (default 0). If 0 and the sample holds
+trailing observations beyond the range of y, they are
+used as the out-of-sample forecast range.
+specs.verbose: 0 to 3 (default 1) */
+
+string yname = argname(y, &quot;y&quot;)
+
+bundle args = ses_default_args()
+scalar fixed_alpha = 0
+scalar fixed_init = 0
+if exists(specs)
+  fixed_alpha = inbundle(specs, &quot;alpha&quot;)
+  fixed_init = inbundle(specs, &quot;init&quot;)
+  errorif(bcheck(&amp;args, specs), &quot;aborting&quot;)
+endif
+
+scalar ntest = args.ntest
+scalar verbose = args.verbose
+
+matrix limits = ses_ranges(y, ntest)
+scalar t1 = limits[1]
+scalar t2 = limits[2]
+scalar t3 = limits[3]
+smpl t1 t3
+
+series a f
+list L = y a f
+
+if verbose &gt; 0
+  printf &quot;Simple exponential smoothing\n&quot;
+  printf &quot;Training range: %s to %s\n&quot;, obslabel(t1), obslabel(t2)
+  if args.ntest &gt; 0
+    printf &quot;Testing forecast: %s to %s\n\n&quot;, obslabel(t2+1), obslabel(t3)
+  elif t3 &gt; t2
+    printf &quot;Out-of-sample forecast: %s to %s\n\n&quot;, obslabel(t2+1), obslabel(t3)
+  else
+    printf &quot;Number of forecasts: 0\n\n&quot;
+  endif
+endif
+
+# training data as a column vector
+smpl t1 t2
+matrix my = {y}
+smpl t1 t3
+
+matrix theta = {args.alpha; my[1]}
+if fixed_init
+  theta[2] = args.init
+endif
+
+if !(fixed_alpha &amp;&amp; fixed_init)
+  theta = ses_auto_parms(my, theta, !fixed_alpha, !fixed_init, verbose)
+  if !ok(theta[1])
+    funcerr &quot;Failed to estimate parameters&quot;
+  endif
+endif
+
+scalar alpha = theta[1]
+scalar l0 = theta[2]
+
+# training: levels and one-step-ahead forecasts
+matrix Ltr = ses_levels(theta, my)
+matrix u = my - Ltr[,1]
+scalar n = rows(u)
+scalar SSE = sumc(u.^2)
+scalar RMSE_train = sqrt(SSE / n)
+scalar MAE_train = sumc(abs(u)) / n
+
+# transcribe to series over t1..t2
+smpl t1 t2
+a = Ltr[,2]
+f = Ltr[,1]
+
+# flat forecasts over t2+1..t3 (test or out-of-sample)
+if t3 &gt; t2
+  smpl t2+1 t3
+  f = Ltr[n,2]
+endif
+smpl t1 t3
+
+# same names whether or not we are printing, so that ses_plot()
+# and other consumers of H always find them
+rename a level
+rename f forecast
+
+if verbose &gt; 0
+  printf &quot;alpha = %g, l_0 = %g\n&quot;, alpha, l0
+  printf &quot;training SSE = %g, RMSE = %g, MAE = %g\n&quot;, SSE, RMSE_train, MAE_train
+  print L -o
+endif
+
+set skip_missing off
+matrix H = {L}
+bundle ret = _(alpha, l0, theta, ntest, H, SSE, RMSE_train, MAE_train, yname, limits)
+
+if ntest &gt; 0
+  ses_add_eval_stats(&amp;ret)
+  if verbose &gt; 0
+    printf &quot;testing RMSE = %g, MAE = %g\n&quot;, ret.RMSE_test, ret.MAE_test
+  endif
+endif
+
+if verbose &gt; 0
+  printf &quot;\n&quot;
+endif
+if ret.limits[3] &gt; ret.limits[2]
+  ses_add_fcse(&amp;ret)
+endif
+if $version &gt;= 20262
+  ses_add_virtual_series(&amp;ret)
+endif
+
+return ret
+</code>
+</gretl-function>
+<gretl-function name="ses_gui" type="bundle" pkg-role="gui-main">
+ <params count="5">
+  <param name="y" type="series"/>
+  <param name="parms" type="int" min="1" max="2" default="1">
+<description>alpha</description>
+<labels count="2">
+"automatic" "pre-specified" </labels>
+  </param>
+  <param name="alpha" type="scalar" min="0" max="1" default="0.2" step="0.0001">
+<description>smoothing parameter, α</description>
+  </param>
+  <param name="ntest" type="int" min="0" default="0">
+<description>ntest, see Help</description>
+  </param>
+  <param name="verbose" type="int" min="0" max="3" default="1"/>
+ </params>
+<code>/* GUI wrapper around ses(). */
+
+string yname = argname(y, &quot;y&quot;)
+if yname != &quot;y&quot;
+  rename y @yname
+endif
+
+bundle ret
+if parms == 1
+  ret = ses(@yname, _(ntest, verbose))
+else
+  ret = ses(@yname, _(alpha, ntest, verbose))
+endif
+return ret
+</code>
+</gretl-function>
+<gretl-function name="ses_plot" type="void" pkg-role="bundle-plot">
+ <params count="3">
+  <param name="b" type="bundleref" const="true"/>
+  <param name="ptype" type="int" min="1" max="2" default="1">
+<description>plot type</description>
+<labels count="2">
+"actual and forecast" "components" </labels>
+  </param>
+  <param name="ci_levels" type="matrix" optional="true"/>
+ </params>
+<code>/* Plot the results of ses(): either actual, fitted and forecast
+(with confidence bands, if forecasts are available), or the level
+and the irregular component. */
+
+list L = mat2list(b.H)
+if ptype == 1
+  string yname = b.yname
+  if yname != &quot;y&quot;
+    rename y @yname
+  endif
+  if b.limits[3] &gt; b.limits[2]
+    scalar c1 c2 hmax
+    ses_get_ci_vals(b, ci_levels, &amp;c1, &amp;c2, &amp;hmax)
+    df = rows(b.H) - hmax - 2
+    hbands = ses_ci_bands(df, c1, c2)
+    list P = @yname forecast
+    plot P
+      options --time-series --with-lines --bands=hbands
+      printf &quot;set title 'forecast with %d and %d percent intervals'&quot;, c1, c2
+    end plot --output=display
+  else
+    gnuplot @yname forecast --time --with-lines --output=display
+  endif
+else
+  series irreg = b.H[,1] - b.H[,3]
+  tsplots level irreg --output=display
+endif
+</code>
+</gretl-function>
+<gretl-function name="ses_ci_matrix" type="matrix">
+ <params count="2">
+  <param name="b" type="bundle" const="true"/>
+  <param name="ci_levels" type="matrix" optional="true"/>
+ </params>
+<code>/* Confidence intervals for the post-training forecasts: columns
+Lo/Hi for the lower and upper of the two requested levels
+(default 80 and 95 percent). */
+
+hmax = b.limits[3] - b.limits[2]
+errorif(hmax &lt;= 0, &quot;No post-training forecasts are available&quot;)
+if exists(ci_levels)
+  ses_check_ci_levels(ci_levels)
+else
+  ci_levels = {80, 95}
+endif
+
+df = rows(b.H) - hmax - 2
+ci1 = min(ci_levels)
+ci2 = max(ci_levels)
+f1 = critical(t, df, (100 - ci1) / 200)
+f2 = critical(t, df, (100 - ci2) / 200)
+
+matrix CI = zeros(hmax, 4)
+t = rows(b.H) - hmax + 1
+scalar fc me
+loop i=1..hmax
+  fc = b.H[t,3]
+  me = f1 * b.H[t,4]
+  CI[i,1] = fc - me
+  CI[i,2] = fc + me
+  me = f2 * b.H[t,4]
+  CI[i,3] = fc - me
+  CI[i,4] = fc + me
+  t++
+endloop
+
+strings cs = array(4)
+cs[1] = sprintf(&quot;Lo%d&quot;, ci1)
+cs[2] = sprintf(&quot;Hi%d&quot;, ci1)
+cs[3] = sprintf(&quot;Lo%d&quot;, ci2)
+cs[4] = sprintf(&quot;Hi%d&quot;, ci2)
+cnameset(CI, cs)
+return CI
+</code>
+</gretl-function>
+<gretl-function name="ses_levels" type="matrix" private="1">
+ <params count="2">
+  <param name="theta" type="matrix" const="true"/>
+  <param name="y" type="matrix" const="true"/>
+ </params>
+<code>/* SES recursion given theta = (alpha, l_0). Column 1: one-step
+forecast made at t-1 (for t = 1 the initial level l_0); column 2:
+level l_t = alpha*y_t + (1-alpha)*l_{t-1}. */
+
+scalar a = theta[1]
+scalar l = theta[2]
+matrix L = zeros(rows(y), 2)
+loop t=1..rows(y) -q
+  L[t,1] = l
+  l = a*y[t] + (1-a)*l
+  L[t,2] = l
+endloop
+return L
+</code>
+</gretl-function>
+<gretl-function name="ses_crit" type="scalar" private="1">
+ <params count="4">
+  <param name="p" type="matrix" const="true"/>
+  <param name="my" type="matrix" const="true"/>
+  <param name="theta0" type="matrix" const="true"/>
+  <param name="idx" type="matrix" const="true"/>
+ </params>
+<code>/* Sum of squared one-step forecast errors as a function of the free
+parameters 'p', which occupy positions 'idx' of theta = (alpha, l_0); the remaining elements are taken from 'theta0'. */
+
+matrix theta = theta0
+theta[idx] = p
+matrix L = ses_levels(theta, my)
+return sumc((my - L[,1]).^2)
+</code>
+</gretl-function>
+<gretl-function name="ses_auto_parms" type="matrix" private="1">
+ <params count="5">
+  <param name="my" type="matrix" const="true"/>
+  <param name="theta0" type="matrix" const="true"/>
+  <param name="free_alpha" type="int"/>
+  <param name="free_init" type="int"/>
+  <param name="verbose" type="int"/>
+ </params>
+<code>/* Estimate the free elements of theta = (alpha, l_0) by minimising
+the SSE. alpha is restricted to [0,1]; l_0 is unrestricted. Returns
+the full theta, or theta[1] = NA on failure. */
+
+matrix theta = theta0
+matrix idx = selifr({1; 2}, {free_alpha; free_init})
+matrix p = theta[idx]
+
+if verbose == 3
+  set max_verbose full
+elif verbose == 2
+  set max_verbose on
+  set bfgs_verbskip 5
+endif
+
+scalar SSE
+if free_alpha
+  matrix bounds = {1, 0, 1}
+  catch SSE = BFGScmin(&amp;p, bounds, ses_crit(p, my, theta0, idx))
+else
+  catch SSE = BFGSmin(&amp;p, ses_crit(p, my, theta0, idx))
+endif
+err = $error
+
+if err
+  printf &quot;Got error %d from the optimizer\n&quot;, err
+  theta[1] = NA
+else
+  theta[idx] = p
+  if verbose &gt; 1
+    printf &quot;\n&quot;
+  endif
+endif
+return theta
+</code>
+</gretl-function>
+<gretl-function name="ses_ranges" type="matrix" private="1">
+ <params count="2">
+  <param name="y" type="series" const="true"/>
+  <param name="ntest" type="int"/>
+ </params>
+<code>/* Returns (t1, t2, t3): start and end of the training range and end
+of the forecast range. */
+
+matrix ret = zeros(1,3)
+catch smpl --contiguous y
+if $error
+  funcerr &quot;Missing values encountered&quot;
+endif
+ret[1] = $t1                # start of contiguous y
+ret[2] = $t2                # end of contiguous y
+scalar tail = $tmax - $t2
+if ntest &gt; 0
+  ret[2] = $t2 - ntest
+  ret[3] = $t2
+elif tail &gt; 0
+  ret[3] = $tmax
+else
+  ret[3] = $t2
+endif
+ntrain = ret[2] - ret[1] + 1
+errorif(ntrain &lt; 4, &quot;Insufficient observations for training&quot;)
+return ret
+</code>
+</gretl-function>
+<gretl-function name="ses_default_args" type="bundle" private="1">
+<code>/* Default options and their admissible ranges for bcheck(). */
+
+bundle b
+b.alpha = 0.5               # start value if alpha is estimated
+b.init = NA
+b.ntest = 0
+b.verbose = 1
+b.bounds = _(alpha={0,1}, verbose={0,3}, ntest={0,NA})
+return b
+</code>
+</gretl-function>
+<gretl-function name="ses_add_eval_stats" type="void" private="1">
+ <params count="1">
+  <param name="b" type="bundleref"/>
+ </params>
+<code>/* Add RMSE and MAE over the test range to 'b'. */
+
+scalar T = rows(b.H)
+scalar t0 = T - b.ntest + 1
+matrix e = b.H[t0:T,1] - b.H[t0:T,3]
+b.RMSE_test = sqrt(sumc(e.^2) / b.ntest)
+b.MAE_test = sumc(abs(e)) / b.ntest
+</code>
+</gretl-function>
+<gretl-function name="ses_add_fcse" type="void" private="1">
+ <params count="1">
+  <param name="b" type="bundleref"/>
+ </params>
+<code>/* Append the forecast standard errors of ETS(A,N,N) as a column of
+'b.H', see https://otexts.com/fpp3/ets-forecasting.html (sec. 8.7):
+var_h = sigma^2 * (1 + (h-1)*alpha^2). */
+
+scalar s2 = b.RMSE_train^2
+scalar hmax = b.limits[3] - b.limits[2]
+matrix vh = ones(rows(b.H), 1) * NA
+scalar t = rows(vh) - hmax + 1
+loop h=1..hmax -q
+  vh[t++] = s2 * (1 + (h-1) * b.alpha^2)
+endloop
+strings ss = cnameget(b.H)
+b.H ~= sqrt(vh)
+cnameset(b.H, ss + &quot;stderr&quot;)
+</code>
+</gretl-function>
+<gretl-function name="ses_add_virtual_series" type="void" private="1">
+ <params count="1">
+  <param name="b" type="bundleref"/>
+ </params>
+<code>/* Make level, forecast and irregular available as virtual series. */
+
+string s = sprintf(&quot;%s_level&quot;, b.yname)
+b[s] = &quot;virtual_series:H[,2]&quot;
+s = sprintf(&quot;%s_fcast&quot;, b.yname)
+b[s] = &quot;virtual_series:H[,3]&quot;
+s = sprintf(&quot;%s_irreg&quot;, b.yname)
+b[s] = &quot;virtual_series:H[,1]-H[,3]&quot;
+</code>
+</gretl-function>
+<gretl-function name="ses_check_ci_levels" type="void" private="1">
+ <params count="1">
+  <param name="pc" type="matrix" const="true"/>
+ </params>
+<code>scalar err = 0
+if nelem(pc) != 2
+  err = 1
+elif min(pc) &lt; 50 || max(pc) &gt; 99
+  err = 2
+elif pc[1] == pc[2]
+  err = 3
+endif
+errorif(err, &quot;ci_levels: invalid argument&quot;)
+</code>
+</gretl-function>
+<gretl-function name="ses_ci_bands" type="bundles" private="1">
+ <params count="3">
+  <param name="df" type="int"/>
+  <param name="c1" type="scalar"/>
+  <param name="c2" type="scalar"/>
+ </params>
+<code>bundles bb = array(2)
+# for plotting, show the wider band first
+f1 = critical(t, df, (100 - c2) / 200)
+f2 = critical(t, df, (100 - c1) / 200)
+bb[1] = _(center=&quot;forecast&quot;, width=&quot;stderr&quot;, factor=f1, style=&quot;fill&quot;, color=&quot;#BBD9F5&quot;)
+bb[2] = _(center=&quot;forecast&quot;, width=&quot;stderr&quot;, factor=f2, style=&quot;fill&quot;, color=&quot;#6AADEC&quot;)
+return bb
+</code>
+</gretl-function>
+<gretl-function name="ses_get_ci_vals" type="void" private="1">
+ <params count="5">
+  <param name="b" type="bundle" const="true"/>
+  <param name="ci_levels" type="matrix" optional="true"/>
+  <param name="c1" type="scalarref"/>
+  <param name="c2" type="scalarref"/>
+  <param name="hmax" type="scalarref"/>
+ </params>
+<code>if exists(ci_levels)
+  ses_check_ci_levels(ci_levels)
+else
+  ci_levels = {80, 95}
+endif
+hmax = b.limits[3] - b.limits[2]
+c1 = min(ci_levels)
+c2 = max(ci_levels)
+</code>
+</gretl-function>
+<gretl-function name="ses_precheck" type="scalar" private="1" pkg-role="gui-precheck">
+<code>/* Non-zero if the dataset is not suitable: we require sufficient
+observations. */
+return $nobs &lt; 10
+</code>
+</gretl-function>
+<gretl-function name="ses_ui_maker" type="bundle" private="1" pkg-role="ui-maker">
+<code>bundle b
+b.alpha = _(depends=&quot;parms=2&quot;)
+return b
+</code>
+</gretl-function>
+<sample-script>
+clear
+set verbose off
+include ses.gfn
+
+# Annual exports of Algeria, 1960-2017
+open algeria.gdt --frompkg=ses --quiet
+
+# Estimate alpha and the initial level (fpp3: alpha = 0.84, l_0 = 39.5)
+bundle b = ses(Exports)
+
+# Fix alpha, hold back the last 5 observations for evaluation
+bundle opts = _(alpha=0.5, ntest=5)
+bundle b2 = ses(Exports, opts)
+
+# Five out-of-sample forecasts with intervals and plots
+dataset addobs 5
+bundle b3 = ses(Exports)
+print ses_ci_matrix(b3)
+ses_plot(&amp;b3, 1)
+ses_plot(&amp;b3, 2)
+</sample-script>
+</gretl-function-package>
+</gretl-functions>

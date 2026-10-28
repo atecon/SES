@@ -1,0 +1,425 @@
+/* Simple exponential smoothing, ETS(A,N,N).
+https://otexts.com/fpp3/ses.html
+
+Level recursion: l_t = alpha*y_t + (1-alpha)*l_{t-1}. The one-step
+forecast of y_t is l_{t-1} and all multi-step forecasts are flat at the
+last level. alpha and the initial level l_0 are estimated jointly by
+minimising the sum of squared one-step forecast errors. */
+
+
+### Public functions
+
+function bundle ses (const series y, const bundle specs[null])
+    /* Simple exponential smoothing of series 'y'.
+
+    specs.alpha:   smoothing parameter in [0,1]. If given, alpha is not
+                   estimated.
+    specs.init:    initial level l_0. If given, l_0 is not estimated.
+    specs.ntest:   number of trailing observations held back for testing
+                   forecasts (default 0). If 0 and the sample holds
+                   trailing observations beyond the range of y, they are
+                   used as the out-of-sample forecast range.
+    specs.verbose: 0 to 3 (default 1) */
+
+    string yname = argname(y, "y")
+
+    bundle args = ses_default_args()
+    scalar fixed_alpha = 0
+    scalar fixed_init = 0
+    if exists(specs)
+        fixed_alpha = inbundle(specs, "alpha")
+        fixed_init = inbundle(specs, "init")
+        errorif(bcheck(&args, specs), "aborting")
+    endif
+
+    scalar ntest = args.ntest
+    scalar verbose = args.verbose
+
+    matrix limits = ses_ranges(y, ntest)
+    scalar t1 = limits[1]
+    scalar t2 = limits[2]
+    scalar t3 = limits[3]
+    smpl t1 t3
+
+    series a f
+    list L = y a f
+
+    if verbose > 0
+        printf "Simple exponential smoothing\n"
+        printf "Training range: %s to %s\n", obslabel(t1), obslabel(t2)
+        if args.ntest > 0
+            printf "Testing forecast: %s to %s\n\n", obslabel(t2+1), obslabel(t3)
+        elif t3 > t2
+            printf "Out-of-sample forecast: %s to %s\n\n", obslabel(t2+1), obslabel(t3)
+        else
+            printf "Number of forecasts: 0\n\n"
+        endif
+    endif
+
+    # training data as a column vector
+    smpl t1 t2
+    matrix my = {y}
+    smpl t1 t3
+
+    matrix theta = {args.alpha; my[1]}
+    if fixed_init
+        theta[2] = args.init
+    endif
+
+    if !(fixed_alpha && fixed_init)
+        theta = ses_auto_parms(my, theta, !fixed_alpha, !fixed_init, verbose)
+        if !ok(theta[1])
+            funcerr "Failed to estimate parameters"
+        endif
+    endif
+
+    scalar alpha = theta[1]
+    scalar l0 = theta[2]
+
+    # training: levels and one-step-ahead forecasts
+    matrix Ltr = ses_levels(theta, my)
+    matrix u = my - Ltr[,1]
+    scalar n = rows(u)
+    scalar SSE = sumc(u.^2)
+    scalar RMSE_train = sqrt(SSE / n)
+    scalar MAE_train = sumc(abs(u)) / n
+
+    # transcribe to series over t1..t2
+    smpl t1 t2
+    a = Ltr[,2]
+    f = Ltr[,1]
+
+    # flat forecasts over t2+1..t3 (test or out-of-sample)
+    if t3 > t2
+        smpl t2+1 t3
+        f = Ltr[n,2]
+    endif
+    smpl t1 t3
+
+    # same names whether or not we are printing, so that ses_plot()
+    # and other consumers of H always find them
+    rename a level
+    rename f forecast
+
+    if verbose > 0
+        printf "alpha = %g, l_0 = %g\n", alpha, l0
+        printf "training SSE = %g, RMSE = %g, MAE = %g\n", SSE, RMSE_train, MAE_train
+        print L -o
+    endif
+
+    set skip_missing off
+    matrix H = {L}
+    bundle ret = _(alpha, l0, theta, ntest, H, SSE, RMSE_train, MAE_train, yname, limits)
+
+    if ntest > 0
+        ses_add_eval_stats(&ret)
+        if verbose > 0
+            printf "testing RMSE = %g, MAE = %g\n", ret.RMSE_test, ret.MAE_test
+        endif
+    endif
+
+    if verbose > 0
+        printf "\n"
+    endif
+    if ret.limits[3] > ret.limits[2]
+        ses_add_fcse(&ret)
+    endif
+    if $version >= 20262
+        ses_add_virtual_series(&ret)
+    endif
+
+    return ret
+end function
+
+function bundle ses_gui (series y,
+                         int parms[1:2:1] "alpha" {"automatic", "pre-specified"},
+                         scalar alpha[0:1:0.2:0.0001] "smoothing parameter, α",
+                         int ntest[0::0] "ntest, see Help",
+                         int verbose[0:3:1])
+    /* GUI wrapper around ses(). */
+
+    string yname = argname(y, "y")
+    if yname != "y"
+        rename y @yname
+    endif
+
+    bundle ret
+    if parms == 1
+        ret = ses(@yname, _(ntest, verbose))
+    else
+        ret = ses(@yname, _(alpha, ntest, verbose))
+    endif
+    return ret
+end function
+
+function void ses_plot (const bundleref b,
+                        int ptype[1:2:1] "plot type" {"actual and forecast", "components"},
+                        matrix ci_levels[null])
+    /* Plot the results of ses(): either actual, fitted and forecast
+    (with confidence bands, if forecasts are available), or the level
+    and the irregular component. */
+
+    list L = mat2list(b.H)
+    if ptype == 1
+        string yname = b.yname
+        if yname != "y"
+            rename y @yname
+        endif
+        if b.limits[3] > b.limits[2]
+            scalar c1 c2 hmax
+            ses_get_ci_vals(b, ci_levels, &c1, &c2, &hmax)
+            df = rows(b.H) - hmax - 2
+            hbands = ses_ci_bands(df, c1, c2)
+            list P = @yname forecast
+            plot P
+                options --time-series --with-lines --bands=hbands
+                printf "set title 'forecast with %d and %d percent intervals'", c1, c2
+            end plot --output=display
+        else
+            gnuplot @yname forecast --time --with-lines --output=display
+        endif
+    else
+        series irreg = b.H[,1] - b.H[,3]
+        tsplots level irreg --output=display
+    endif
+end function
+
+function matrix ses_ci_matrix (const bundle b, matrix ci_levels[null])
+    /* Confidence intervals for the post-training forecasts: columns
+    Lo/Hi for the lower and upper of the two requested levels
+    (default 80 and 95 percent). */
+
+    hmax = b.limits[3] - b.limits[2]
+    errorif(hmax <= 0, "No post-training forecasts are available")
+    if exists(ci_levels)
+        ses_check_ci_levels(ci_levels)
+    else
+        ci_levels = {80, 95}
+    endif
+
+    df = rows(b.H) - hmax - 2
+    ci1 = min(ci_levels)
+    ci2 = max(ci_levels)
+    f1 = critical(t, df, (100 - ci1) / 200)
+    f2 = critical(t, df, (100 - ci2) / 200)
+
+    matrix CI = zeros(hmax, 4)
+    t = rows(b.H) - hmax + 1
+    scalar fc me
+    loop i=1..hmax
+        fc = b.H[t,3]
+        me = f1 * b.H[t,4]
+        CI[i,1] = fc - me
+        CI[i,2] = fc + me
+        me = f2 * b.H[t,4]
+        CI[i,3] = fc - me
+        CI[i,4] = fc + me
+        t++
+    endloop
+
+    strings cs = array(4)
+    cs[1] = sprintf("Lo%d", ci1)
+    cs[2] = sprintf("Hi%d", ci1)
+    cs[3] = sprintf("Lo%d", ci2)
+    cs[4] = sprintf("Hi%d", ci2)
+    cnameset(CI, cs)
+    return CI
+end function
+
+
+### Private functions
+
+function matrix ses_levels (const matrix theta, const matrix y)
+    /* SES recursion given theta = (alpha, l_0). Column 1: one-step
+    forecast made at t-1 (for t = 1 the initial level l_0); column 2:
+    level l_t = alpha*y_t + (1-alpha)*l_{t-1}. */
+
+    scalar a = theta[1]
+    scalar l = theta[2]
+    matrix L = zeros(rows(y), 2)
+    loop t=1..rows(y) -q
+        L[t,1] = l
+        l = a*y[t] + (1-a)*l
+        L[t,2] = l
+    endloop
+    return L
+end function
+
+function scalar ses_crit (const matrix p,
+                          const matrix my,
+                          const matrix theta0,
+                          const matrix idx)
+    /* Sum of squared one-step forecast errors as a function of the free
+    parameters 'p', which occupy positions 'idx' of theta = (alpha, l_0);
+    the remaining elements are taken from 'theta0'. */
+
+    matrix theta = theta0
+    theta[idx] = p
+    matrix L = ses_levels(theta, my)
+    return sumc((my - L[,1]).^2)
+end function
+
+function matrix ses_auto_parms (const matrix my,
+                                const matrix theta0,
+                                int free_alpha,
+                                int free_init,
+                                int verbose)
+    /* Estimate the free elements of theta = (alpha, l_0) by minimising
+    the SSE. alpha is restricted to [0,1]; l_0 is unrestricted. Returns
+    the full theta, or theta[1] = NA on failure. */
+
+    matrix theta = theta0
+    matrix idx = selifr({1; 2}, {free_alpha; free_init})
+    matrix p = theta[idx]
+
+    if verbose == 3
+        set max_verbose full
+    elif verbose == 2
+        set max_verbose on
+        set bfgs_verbskip 5
+    endif
+
+    scalar SSE
+    if free_alpha
+        matrix bounds = {1, 0, 1}
+        catch SSE = BFGScmin(&p, bounds, ses_crit(p, my, theta0, idx))
+    else
+        catch SSE = BFGSmin(&p, ses_crit(p, my, theta0, idx))
+    endif
+    err = $error
+
+    if err
+        printf "Got error %d from the optimizer\n", err
+        theta[1] = NA
+    else
+        theta[idx] = p
+        if verbose > 1
+            printf "\n"
+        endif
+    endif
+    return theta
+end function
+
+function matrix ses_ranges (const series y, int ntest)
+    /* Returns (t1, t2, t3): start and end of the training range and end
+    of the forecast range. */
+
+    matrix ret = zeros(1,3)
+    catch smpl --contiguous y
+    if $error
+        funcerr "Missing values encountered"
+    endif
+    ret[1] = $t1                # start of contiguous y
+    ret[2] = $t2                # end of contiguous y
+    scalar tail = $tmax - $t2
+    if ntest > 0
+        ret[2] = $t2 - ntest
+        ret[3] = $t2
+    elif tail > 0
+        ret[3] = $tmax
+    else
+        ret[3] = $t2
+    endif
+    ntrain = ret[2] - ret[1] + 1
+    errorif(ntrain < 4, "Insufficient observations for training")
+    return ret
+end function
+
+function bundle ses_default_args (void)
+    /* Default options and their admissible ranges for bcheck(). */
+
+    bundle b
+    b.alpha = 0.5               # start value if alpha is estimated
+    b.init = NA
+    b.ntest = 0
+    b.verbose = 1
+    b.bounds = _(alpha={0,1}, verbose={0,3}, ntest={0,NA})
+    return b
+end function
+
+function void ses_add_eval_stats (bundleref b)
+    /* Add RMSE and MAE over the test range to 'b'. */
+
+    scalar T = rows(b.H)
+    scalar t0 = T - b.ntest + 1
+    matrix e = b.H[t0:T,1] - b.H[t0:T,3]
+    b.RMSE_test = sqrt(sumc(e.^2) / b.ntest)
+    b.MAE_test = sumc(abs(e)) / b.ntest
+end function
+
+function void ses_add_fcse (bundleref b)
+    /* Append the forecast standard errors of ETS(A,N,N) as a column of
+    'b.H', see https://otexts.com/fpp3/ets-forecasting.html (sec. 8.7):
+    var_h = sigma^2 * (1 + (h-1)*alpha^2). */
+
+    scalar s2 = b.RMSE_train^2
+    scalar hmax = b.limits[3] - b.limits[2]
+    matrix vh = ones(rows(b.H), 1) * NA
+    scalar t = rows(vh) - hmax + 1
+    loop h=1..hmax -q
+        vh[t++] = s2 * (1 + (h-1) * b.alpha^2)
+    endloop
+    strings ss = cnameget(b.H)
+    b.H ~= sqrt(vh)
+    cnameset(b.H, ss + "stderr")
+end function
+
+function void ses_add_virtual_series (bundleref b)
+    /* Make level, forecast and irregular available as virtual series. */
+
+    string s = sprintf("%s_level", b.yname)
+    b[s] = "virtual_series:H[,2]"
+    s = sprintf("%s_fcast", b.yname)
+    b[s] = "virtual_series:H[,3]"
+    s = sprintf("%s_irreg", b.yname)
+    b[s] = "virtual_series:H[,1]-H[,3]"
+end function
+
+function void ses_check_ci_levels (const matrix pc)
+    scalar err = 0
+    if nelem(pc) != 2
+        err = 1
+    elif min(pc) < 50 || max(pc) > 99
+        err = 2
+    elif pc[1] == pc[2]
+        err = 3
+    endif
+    errorif(err, "ci_levels: invalid argument")
+end function
+
+function bundles ses_ci_bands (int df, scalar c1, scalar c2)
+    bundles bb = array(2)
+    # for plotting, show the wider band first
+    f1 = critical(t, df, (100 - c2) / 200)
+    f2 = critical(t, df, (100 - c1) / 200)
+    bb[1] = _(center="forecast", width="stderr", factor=f1, style="fill", color="#BBD9F5")
+    bb[2] = _(center="forecast", width="stderr", factor=f2, style="fill", color="#6AADEC")
+    return bb
+end function
+
+function void ses_get_ci_vals (const bundle b,
+                               matrix ci_levels[null],
+                               scalarref c1,
+                               scalarref c2,
+                               scalarref hmax)
+    if exists(ci_levels)
+        ses_check_ci_levels(ci_levels)
+    else
+        ci_levels = {80, 95}
+    endif
+    hmax = b.limits[3] - b.limits[2]
+    c1 = min(ci_levels)
+    c2 = max(ci_levels)
+end function
+
+function scalar ses_precheck (void)
+    /* Non-zero if the dataset is not suitable: we require sufficient
+    observations. */
+    return $nobs < 10
+end function
+
+function bundle ses_ui_maker (void)
+    bundle b
+    b.alpha = _(depends="parms=2")
+    return b
+end function

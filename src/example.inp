@@ -1,0 +1,63 @@
+# SES recursion. Column 1: one-step forecast made at t-1 (for t = 1 the
+# initial level l_0); column 2: level l_t = alpha*y_t + (1-alpha)*l_{t-1}
+function matrix ses_levels(const matrix theta, const matrix y)
+    scalar a = theta[1]
+    scalar l = theta[2]
+    matrix L = zeros(rows(y), 2)
+    loop t=1..rows(y)
+        L[t,1] = l
+        l = a*y[t] + (1-a)*l
+        L[t,2] = l
+    endloop
+    return L
+end function
+
+# Sum of squared one-step forecast errors, t = 1, ..., T
+function scalar ses_sse(const matrix theta, const matrix y)
+    matrix L = ses_levels(theta, y)
+    return sumc((y - L[,1]).^2)
+end function
+
+
+### 2. SES by hand: optimal alpha and initial level
+### Note: the book minimises the SSE over all T observations with the
+### initial level as a free parameter; BFGScmin does the same here.
+
+matrix y = Exports
+matrix theta = {0.5; y[1]}
+# rows: parameters; columns: bound type (1 = both bounds), lower, upper.
+# The initial level is bounded only very loosely.
+matrix bounds = {1, 0, 1; 1, -1e10, 1e10}
+
+scalar sse = BFGScmin(&theta, bounds, ses_sse(theta, y))
+
+scalar alpha_hat = theta[1]
+scalar l0_hat = theta[2]
+
+printf "\nSES by hand (BFGScmin):\n"
+printf "  alpha = %.4f (book: 0.84)\n", alpha_hat
+printf "  l_0   = %.2f (book: 39.5)\n", l0_hat
+printf "  SSE   = %.4f\n", sse
+
+# Fitted one-step forecasts and levels
+matrix L = ses_levels(theta, y)
+series fitted = L[,1]
+series level = L[,2]
+setinfo fitted -n "SES fitted"
+setinfo level -n "level"
+
+# Forecasts from SES are flat at the last level, l_T
+scalar fc_ses = level[$nobs]
+printf "  forecast for all future period	s: %.2f\n", fc_ses
+
+
+### 3. Cross-check of alpha with ema_tools
+### Note: ema_alpha_opt() searches alpha on a grid of 0.01 and uses
+### movavg(), which starts from the first observation. It does not
+### estimate the initial level, so only alpha is compared.
+
+include ema_tools.gfn
+
+scalar alpha_grid = ema_alpha_opt(Exports)
+printf "\nema_alpha_opt (grid search, step 0.01): alpha = %.2f\n", alpha_grid
+printf "Difference to BFGScmin alpha: %.4f\n", abs(alpha_grid - alpha_hat)
