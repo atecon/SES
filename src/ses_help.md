@@ -20,7 +20,7 @@ Available under *Variable > Filter > SES*. With parameters set to `automatic`, `
 
 ## Public functions
 
-### `bundle ses(const series y, bundle specs[null])`
+### `bundle ses(series y, bundle specs[null])`
 
 Estimates the model and returns a bundle. Optional keys of `specs`:
 
@@ -49,23 +49,24 @@ Returned bundle:
 - `limits`: Vector (start of training, end of training, end of forecasts).
 
 In `H`, `forecast` is the one-step-ahead forecast inside the training range and
-the flat multi-step forecast beyond it. `stderr` follows fpp3 (section 8.7):
-`sigma * sqrt(1 + (h-1) * alpha^2)`, with `sigma^2 = RMSE_train^2`.
+the flat multi-step forecast beyond it. `stderr` follows Hyndman and Athanasopoulos (2021, Sec. 8.7):
+
+`sigma x sqrt(1 + (h-1) x alpha^2)`, with `sigma^2 = RMSE_train^2`.
 
 With gretl 2026b or later the bundle also holds the virtual series `level`,
 `fcast` and `irreg`, e.g. `series fc = b.fcast`.
 
-### `void ses_plot_forecast(const bundleref b, matrix ci_levels[null])`
+### `void ses_plot_forecast(bundleref b, matrix ci_levels[null])`
 
 Plots actual and forecast values, with confidence bands if forecasts beyond the
 training range exist. `ci_levels` holds two confidence levels between 50 and 99
 (default `{80, 95}`).
 
-### `void ses_plot_components(const bundleref b)`
+### `void ses_plot_components(bundleref b)`
 
 Plots the level and the irregular component (one-step forecast errors).
 
-### `matrix ses_ci_matrix(const bundle b, matrix ci_levels[null])`
+### `matrix ses_ci_matrix(bundle b, matrix ci_levels[null])`
 
 Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
 `Hi95`) of the forecast intervals; requires forecasts beyond the training range.
@@ -73,5 +74,5 @@ Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
 
 ## Reference
 
-Hyndman, R.J., and Athanasopoulos, G. (2021) *Forecasting: Principles and
-Practice*, 3rd edition, OTexts. <https://otexts.com/fpp3/>
+Hyndman, R.J., and Athanasopoulos, G. (2021): Forecasting: Principles and
+Practice, 3rd edition, OTexts. https://otexts.com/fpp3/
