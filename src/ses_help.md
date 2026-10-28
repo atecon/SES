@@ -1,4 +1,4 @@
-# ses
+# Simple exponential smoothing (SES)
 
 Simple exponential smoothing (ETS(A,N,N)) for gretl, following
 [fpp3, section 8.1](https://otexts.com/fpp3/ses.html).
@@ -13,6 +13,11 @@ and the initial level `l_0` are estimated jointly by minimizing the sum of
 squared one-step forecast errors (BFGS with box constraints on `alpha`).
 
 Requires time-series data and gretl 2024c or later.
+
+## Graphical interface
+
+Available under *Variable > Filter > SES*. With `parms` set to `automatic`, `alpha` is estimated; with `pre-specified` the given `alpha` is used. The initial level is always estimated. `ntest` and `verbose` as above.
+
 
 ## Public functions
 
@@ -70,22 +75,6 @@ Plots the level and the irregular component (one-step forecast errors).
 Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
 `Hi95`) of the forecast intervals; requires forecasts beyond the training range.
 
-### `bundle ses_gui(...)`
-
-Graphical interface, available under *Variable > Filter > SES*. With `parms`
-set to `automatic`, `alpha` is estimated; with `pre-specified` the given
-`alpha` is used. The initial level is always estimated. `ntest` and `verbose`
-as above.
-
-## Example
-
-    include ses.gfn
-    open algeria.gdt --frompkg=ses
-    dataset addobs 5
-    bundle b = ses(Exports)
-    print ses_ci_matrix(b)
-    ses_plot_forecast(&b)
-    ses_plot_components(&b)
 
 ## Reference
 
