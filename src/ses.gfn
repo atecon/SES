@@ -9,14 +9,13 @@
 <label>SES</label>
 <menu-attachment>MAINWIN/Variable/Filter</menu-attachment>
 <help filename="ses_help.md">
-# ses
+# Simple exponential smoothing (SES)
 
-Simple exponential smoothing (ETS(A,N,N)) for gretl, following
-[fpp3, section 8.1](https://otexts.com/fpp3/ses.html).
+Simple exponential smoothing (ETS(A,N,N)) for gretl, following Hyndman and Athanasopoulos (Sec. 8.1, 2021) (https://otexts.com/fpp3/ses.html).
 
 The level evolves as
 
-    l_t = alpha * y_t + (1 - alpha) * l_{t-1}
+    l_t = alpha x y_t + (1 - alpha) x l_{t-1}
 
 The one-step forecast of `y_t` is `l_{t-1}`, and all multi-step forecasts are
 flat at the last level. The smoothing parameter `alpha` (restricted to [0,1])
@@ -25,18 +24,21 @@ squared one-step forecast errors (BFGS with box constraints on `alpha`).
 
 Requires time-series data and gretl 2024c or later.
 
+## Graphical interface
+
+Available under *Variable &gt; Filter &gt; SES*. With parameters set to `automatic`, `alpha` is estimated; with `pre-specified` the given `alpha` is used. The initial level is always estimated. `ntest` and `verbose` as above.
+
+
 ## Public functions
 
-### `bundle ses(const series y, bundle specs[null])`
+### `bundle ses(series y, bundle specs[null])`
 
 Estimates the model and returns a bundle. Optional keys of `specs`:
 
-| key       | description                                                          | default |
-|-----------|----------------------------------------------------------------------|---------|
-| `alpha`   | Fixed smoothing parameter in [0,1]; if absent, it is estimated       | -       |
-| `init`    | Fixed initial level `l_0`; if absent, it is estimated                | -       |
-| `ntest`   | Number of trailing observations held back to test the forecasts      | 0       |
-| `verbose` | Verbosity, 0 to 3                                                    | 1       |
+- `alpha`: Fixed smoothing parameter in [0,1]; if absent, it is estimated (default: none).
+- `init`: Fixed initial level `l_0`; if absent, it is estimated (default: none).
+- `ntest`: Number of trailing observations held back to test the forecasts (default: 0).
+- `verbose`: Verbosity, 0 to 3 (default: 1).
 
 The training range is the contiguous non-missing range of `y`, minus the last
 `ntest` observations. If `ntest` is 0 and the sample contains observations
@@ -45,58 +47,46 @@ forecasts are computed for them. Missing values inside `y` are an error.
 
 Returned bundle:
 
-| key          | description                                                         |
-|--------------|---------------------------------------------------------------------|
-| `alpha`      | Smoothing parameter                                                 |
-| `l0`         | Initial level                                                       |
-| `theta`      | Vector (alpha, l0)                                                  |
-| `SSE`        | Training sum of squared one-step errors                             |
-| `RMSE_train` | Training root mean squared error                                    |
-| `MAE_train`  | Training mean absolute error                                        |
-| `RMSE_test`, `MAE_test` | Test statistics, only if `ntest &gt; 0`                     |
-| `H`          | Matrix with columns `y`, `level`, `forecast` and, if there are forecasts beyond the training range, `stderr` |
-| `ntest`      | Number of test observations                                         |
-| `yname`      | Name of the series                                                  |
-| `limits`     | Vector (start of training, end of training, end of forecasts)       |
+- `alpha`: Smoothing parameter.
+- `l0`: Initial level.
+- `theta`: Vector (alpha, l0).
+- `SSE`: Training sum of squared one-step errors.
+- `RMSE_train`: Training root mean squared error.
+- `MAE_train`: Training mean absolute error.
+- `RMSE_test`, `MAE_test`: Test statistics, only if `ntest &gt; 0`.
+- `H`: Matrix with columns `y`, `level`, `forecast` and, if there are forecasts beyond the training range, `stderr`.
+- `ntest`: Number of test observations.
+- `yname`: Name of the series.
+- `limits`: Vector (start of training, end of training, end of forecasts).
 
 In `H`, `forecast` is the one-step-ahead forecast inside the training range and
-the flat multi-step forecast beyond it. `stderr` follows fpp3 (section 8.7):
-`sigma * sqrt(1 + (h-1) * alpha^2)`, with `sigma^2 = RMSE_train^2`.
+the flat multi-step forecast beyond it. `stderr` follows Hyndman and Athanasopoulos (2021, Sec. 8.7):
 
-With gretl 2026b or later the bundle also holds the virtual series
-`&lt;y&gt;_level`, `&lt;y&gt;_fcast` and `&lt;y&gt;_irreg`.
+`sigma x sqrt(1 + (h-1) x alpha^2)`, with `sigma^2 = RMSE_train^2`.
 
-### `void ses_plot(const bundleref b, int ptype, matrix ci_levels[null])`
+With gretl 2026b or later the bundle also holds the virtual series `level`,
+`fcast` and `irreg`, e.g. `series fc = b.fcast`.
 
-`ptype = 1` (default): actual and forecast, with confidence bands if forecasts
-beyond the training range exist. `ptype = 2`: level and irregular component.
-`ci_levels` holds two confidence levels between 50 and 99 (default `{80, 95}`).
+### `void ses_plot_forecast(bundleref b, matrix ci_levels[null])`
 
-### `matrix ses_ci_matrix(const bundle b, matrix ci_levels[null])`
+Plots actual and forecast values, with confidence bands if forecasts beyond the
+training range exist. `ci_levels` holds two confidence levels between 50 and 99
+(default `{80, 95}`).
+
+### `void ses_plot_components(bundleref b)`
+
+Plots the level and the irregular component (one-step forecast errors).
+
+### `matrix ses_ci_matrix(bundle b, matrix ci_levels[null])`
 
 Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
 `Hi95`) of the forecast intervals; requires forecasts beyond the training range.
 
-### `bundle ses_gui(...)`
-
-Graphical interface, available under *Variable &gt; Filter &gt; SES*. With `parms`
-set to `automatic`, `alpha` is estimated; with `pre-specified` the given
-`alpha` is used. The initial level is always estimated. `ntest` and `verbose`
-as above.
-
-## Example
-
-    include ses.gfn
-    open algeria.gdt --frompkg=ses
-    dataset addobs 5
-    bundle b = ses(Exports)
-    print ses_ci_matrix(b)
-    ses_plot(&amp;b, 1)
 
 ## Reference
 
-Hyndman, R.J., and Athanasopoulos, G. (2021) *Forecasting: Principles and
-Practice*, 3rd edition, OTexts. &lt;https://otexts.com/fpp3/&gt;
+Hyndman, R.J., and Athanasopoulos, G. (2021): Forecasting: Principles and
+Practice, 3rd edition, OTexts. https://otexts.com/fpp3/
 </help>
 <data-files count="1">
 algeria.gdt </data-files>
@@ -191,7 +181,7 @@ if t3 &gt; t2
 endif
 smpl t1 t3
 
-# same names whether or not we are printing, so that ses_plot()
+# same names whether or not we are printing, so that the plot functions
 # and other consumers of H always find them
 rename a level
 rename f forecast
@@ -268,33 +258,57 @@ return ret
   </param>
   <param name="ci_levels" type="matrix" optional="true"/>
  </params>
-<code>/* Plot the results of ses(): either actual, fitted and forecast
-(with confidence bands, if forecasts are available), or the level
-and the irregular component. */
+<code>/* Entry point for gretl's GUI, which requires an integer plot-type
+selector. Dispatches to ses_plot_forecast() or ses_plot_components(), which are the functions to use in scripts. */
+
+if ptype == 1
+  ses_plot_forecast(&amp;b, ci_levels)
+else
+  ses_plot_components(&amp;b)
+endif
+</code>
+</gretl-function>
+<gretl-function name="ses_plot_forecast" type="void">
+ <params count="2">
+  <param name="b" type="bundleref" const="true"/>
+  <param name="ci_levels" type="matrix" optional="true"/>
+ </params>
+<code>/* Plot actual, fitted and forecast values of ses(), with confidence
+bands if forecasts beyond the training range are available.
+'ci_levels' holds two confidence levels between 50 and 99
+(default 80 and 95). */
 
 list L = mat2list(b.H)
-if ptype == 1
-  string yname = b.yname
-  if yname != &quot;y&quot;
-    rename y @yname
-  endif
-  if b.limits[3] &gt; b.limits[2]
-    scalar c1 c2 hmax
-    ses_get_ci_vals(b, ci_levels, &amp;c1, &amp;c2, &amp;hmax)
-    df = rows(b.H) - hmax - 2
-    hbands = ses_ci_bands(df, c1, c2)
-    list P = @yname forecast
-    plot P
-      options --time-series --with-lines --bands=hbands
-      printf &quot;set title 'forecast with %d and %d percent intervals'&quot;, c1, c2
-    end plot --output=display
-  else
-    gnuplot @yname forecast --time --with-lines --output=display
-  endif
-else
-  series irreg = b.H[,1] - b.H[,3]
-  tsplots level irreg --output=display
+string yname = b.yname
+if yname != &quot;y&quot;
+  rename y @yname
 endif
+if b.limits[3] &gt; b.limits[2]
+  scalar c1 c2 hmax
+  ses_get_ci_vals(b, ci_levels, &amp;c1, &amp;c2, &amp;hmax)
+  df = rows(b.H) - hmax - 2
+  hbands = ses_ci_bands(df, c1, c2)
+  list P = @yname forecast
+  plot P
+    options --time-series --with-lines --single-yaxis --bands=hbands
+    printf &quot;set title 'Forecast with %d and %d percent intervals'&quot;, c1, c2
+    literal set key outside below
+    literal set grid
+  end plot --output=display
+else
+  gnuplot @yname forecast --time --with-lines --output=display
+endif
+</code>
+</gretl-function>
+<gretl-function name="ses_plot_components" type="void">
+ <params count="1">
+  <param name="b" type="bundleref" const="true"/>
+ </params>
+<code>/* Plot the level and the irregular component of ses(). */
+
+list L = mat2list(b.H)
+series irreg = b.H[,1] - b.H[,3]
+tsplots level irreg --output=display
 </code>
 </gretl-function>
 <gretl-function name="ses_ci_matrix" type="matrix">
@@ -503,12 +517,9 @@ cnameset(b.H, ss + &quot;stderr&quot;)
  </params>
 <code>/* Make level, forecast and irregular available as virtual series. */
 
-string s = sprintf(&quot;%s_level&quot;, b.yname)
-b[s] = &quot;virtual_series:H[,2]&quot;
-s = sprintf(&quot;%s_fcast&quot;, b.yname)
-b[s] = &quot;virtual_series:H[,3]&quot;
-s = sprintf(&quot;%s_irreg&quot;, b.yname)
-b[s] = &quot;virtual_series:H[,1]-H[,3]&quot;
+b.level = &quot;virtual_series:H[,2]&quot;
+b.fcast = &quot;virtual_series:H[,3]&quot;
+b.irreg = &quot;virtual_series:H[,1]-H[,3]&quot;
 </code>
 </gretl-function>
 <gretl-function name="ses_check_ci_levels" type="void" private="1">
@@ -590,8 +601,13 @@ bundle b2 = ses(Exports, opts)
 dataset addobs 5
 bundle b3 = ses(Exports)
 print ses_ci_matrix(b3)
-ses_plot(&amp;b3, 1)
-ses_plot(&amp;b3, 2)
+ses_plot_forecast(&amp;b3)
+ses_plot_components(&amp;b3)
+
+# Out-of-sample forecasts and level as series
+series fc = b3.fcast
+series lvl = b3.level
+print Exports fc lvl -o
 </sample-script>
 </gretl-function-package>
 </gretl-functions>
