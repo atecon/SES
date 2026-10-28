@@ -166,7 +166,7 @@ function void ses_plot (const bundleref b,
     endif
 end function
 
-function void ses_plot_forecast (const bundleref b, matrix ci_levels[null])
+function void ses_plot_forecast (const bundle b, matrix ci_levels[null])
     /* Plot actual, fitted and forecast values of ses(), with confidence
     bands if forecasts beyond the training range are available.
     'ci_levels' holds two confidence levels between 50 and 99
@@ -194,7 +194,7 @@ function void ses_plot_forecast (const bundleref b, matrix ci_levels[null])
     endif
 end function
 
-function void ses_plot_components (const bundleref b)
+function void ses_plot_components (const bundle b)
     /* Plot the level and the irregular component of ses(). */
 
     list L = mat2list(b.H)
