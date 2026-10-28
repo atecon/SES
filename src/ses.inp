@@ -96,7 +96,7 @@ function bundle ses (const series y, const bundle specs[null])
     endif
     smpl t1 t3
 
-    # same names whether or not we are printing, so that ses_plot()
+    # same names whether or not we are printing, so that the plot functions
     # and other consumers of H always find them
     rename a level
     rename f forecast
@@ -155,33 +155,49 @@ end function
 function void ses_plot (const bundleref b,
                         int ptype[1:2:1] "plot type" {"actual and forecast", "components"},
                         matrix ci_levels[null])
-    /* Plot the results of ses(): either actual, fitted and forecast
-    (with confidence bands, if forecasts are available), or the level
-    and the irregular component. */
+    /* Entry point for gretl's GUI, which requires an integer plot-type
+    selector. Dispatches to ses_plot_forecast() or ses_plot_components(),
+    which are the functions to use in scripts. */
+
+    if ptype == 1
+        ses_plot_forecast(&b, ci_levels)
+    else
+        ses_plot_components(&b)
+    endif
+end function
+
+function void ses_plot_forecast (const bundleref b, matrix ci_levels[null])
+    /* Plot actual, fitted and forecast values of ses(), with confidence
+    bands if forecasts beyond the training range are available.
+    'ci_levels' holds two confidence levels between 50 and 99
+    (default 80 and 95). */
 
     list L = mat2list(b.H)
-    if ptype == 1
-        string yname = b.yname
-        if yname != "y"
-            rename y @yname
-        endif
-        if b.limits[3] > b.limits[2]
-            scalar c1 c2 hmax
-            ses_get_ci_vals(b, ci_levels, &c1, &c2, &hmax)
-            df = rows(b.H) - hmax - 2
-            hbands = ses_ci_bands(df, c1, c2)
-            list P = @yname forecast
-            plot P
-                options --time-series --with-lines --bands=hbands
-                printf "set title 'forecast with %d and %d percent intervals'", c1, c2
-            end plot --output=display
-        else
-            gnuplot @yname forecast --time --with-lines --output=display
-        endif
-    else
-        series irreg = b.H[,1] - b.H[,3]
-        tsplots level irreg --output=display
+    string yname = b.yname
+    if yname != "y"
+        rename y @yname
     endif
+    if b.limits[3] > b.limits[2]
+        scalar c1 c2 hmax
+        ses_get_ci_vals(b, ci_levels, &c1, &c2, &hmax)
+        df = rows(b.H) - hmax - 2
+        hbands = ses_ci_bands(df, c1, c2)
+        list P = @yname forecast
+        plot P
+            options --time-series --with-lines --bands=hbands
+            printf "set title 'forecast with %d and %d percent intervals'", c1, c2
+        end plot --output=display
+    else
+        gnuplot @yname forecast --time --with-lines --output=display
+    endif
+end function
+
+function void ses_plot_components (const bundleref b)
+    /* Plot the level and the irregular component of ses(). */
+
+    list L = mat2list(b.H)
+    series irreg = b.H[,1] - b.H[,3]
+    tsplots level irreg --output=display
 end function
 
 function matrix ses_ci_matrix (const bundle b, matrix ci_levels[null])
@@ -367,12 +383,9 @@ end function
 function void ses_add_virtual_series (bundleref b)
     /* Make level, forecast and irregular available as virtual series. */
 
-    string s = sprintf("%s_level", b.yname)
-    b[s] = "virtual_series:H[,2]"
-    s = sprintf("%s_fcast", b.yname)
-    b[s] = "virtual_series:H[,3]"
-    s = sprintf("%s_irreg", b.yname)
-    b[s] = "virtual_series:H[,1]-H[,3]"
+    b.level = "virtual_series:H[,2]"
+    b.fcast = "virtual_series:H[,3]"
+    b.irreg = "virtual_series:H[,1]-H[,3]"
 end function
 
 function void ses_check_ci_levels (const matrix pc)

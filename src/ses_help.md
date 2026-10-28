@@ -52,14 +52,24 @@ In `H`, `forecast` is the one-step-ahead forecast inside the training range and
 the flat multi-step forecast beyond it. `stderr` follows fpp3 (section 8.7):
 `sigma * sqrt(1 + (h-1) * alpha^2)`, with `sigma^2 = RMSE_train^2`.
 
-With gretl 2026b or later the bundle also holds the virtual series
-`<y>_level`, `<y>_fcast` and `<y>_irreg`.
+With gretl 2026b or later the bundle also holds the virtual series `level`,
+`fcast` and `irreg`, e.g. `series fc = b.fcast`.
+
+### `void ses_plot_forecast(const bundleref b, matrix ci_levels[null])`
+
+Plots actual and forecast values, with confidence bands if forecasts beyond the
+training range exist. `ci_levels` holds two confidence levels between 50 and 99
+(default `{80, 95}`).
+
+### `void ses_plot_components(const bundleref b)`
+
+Plots the level and the irregular component (one-step forecast errors).
 
 ### `void ses_plot(const bundleref b, int ptype, matrix ci_levels[null])`
 
-`ptype = 1` (default): actual and forecast, with confidence bands if forecasts
-beyond the training range exist. `ptype = 2`: level and irregular component.
-`ci_levels` holds two confidence levels between 50 and 99 (default `{80, 95}`).
+Thin wrapper used by gretl's GUI plot menu: `ptype = 1` calls
+`ses_plot_forecast()`, `ptype = 2` calls `ses_plot_components()`. In scripts,
+call those two functions directly.
 
 ### `matrix ses_ci_matrix(const bundle b, matrix ci_levels[null])`
 
@@ -80,7 +90,8 @@ as above.
     dataset addobs 5
     bundle b = ses(Exports)
     print ses_ci_matrix(b)
-    ses_plot(&b, 1)
+    ses_plot_forecast(&b)
+    ses_plot_components(&b)
 
 ## Reference
 
