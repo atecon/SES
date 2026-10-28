@@ -1,3 +1,4 @@
-# Ignore any .gfn files
-*.gfn
+# Ignore any ses.gfn files
+**/ses.gfn
+
 session.inp
