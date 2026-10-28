@@ -15,13 +15,15 @@ Requires time-series data and gretl 2024c or later.
 
 ## Related packages
 
-Two further user-contributed gretl packages cover related methods:
+Further user-contributed gretl packages cover related methods:
 
 - `Holt`: Holt's linear trend method (double exponential smoothing), which extends SES with a trend component.
 
 - `Winters`: Holt-Winters seasonal smoothing, which adds a seasonal component.
 
 - `ema_tools`: `ema_alpha_opt()` finds the optimal smoothing parameter `alpha` for SES by minimizing the sum of squared one-step forecast errors. The result can be passed to gretl's `movavg()`, which applies SES for a given `alpha`.
+
+- `fcModels` (Yi-Nung Yang): provides `autoSES()`, which selects the smoothing parameter automatically by minimizing the MSE. It also offers other basic forecasting models.
 
 
 
