@@ -1,0 +1,2 @@
+# SES
+Simple exponential smoothing 
