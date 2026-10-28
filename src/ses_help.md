@@ -13,6 +13,19 @@ squared one-step forecast errors (BFGS with box constraints on `alpha`).
 
 Requires time-series data and gretl 2024c or later.
 
+## Related packages
+
+Two further user-contributed gretl packages cover related methods:
+
+- `Holt`: Holt's linear trend method (double exponential smoothing), which extends SES with a trend component.
+
+- `Winters`: Holt-Winters seasonal smoothing, which adds a seasonal component.
+
+- `ema_tools`: `ema_alpha_opt()` finds the optimal smoothing parameter `alpha` for SES by minimizing the sum of squared one-step forecast errors. The result can be passed to gretl's `movavg()`, which applies SES for a given `alpha`.
+
+
+
+
 ## Graphical interface
 
 Available under *Variable > Filter > SES*. With parameters set to `automatic`, `alpha` is estimated; with `pre-specified` the given `alpha` is used. The initial level is always estimated. `ntest` and `verbose` as above.
@@ -56,13 +69,13 @@ the flat multi-step forecast beyond it. `stderr` follows Hyndman and Athanasopou
 With gretl 2026b or later the bundle also holds the virtual series `level`,
 `fcast` and `irreg`, e.g. `series fc = b.fcast`.
 
-### `void ses_plot_forecast(bundleref b, matrix ci_levels[null])`
+### `void ses_plot_forecast(bundle b, matrix ci_levels[null])`
 
 Plots actual and forecast values, with confidence bands if forecasts beyond the
 training range exist. `ci_levels` holds two confidence levels between 50 and 99
 (default `{80, 95}`).
 
-### `void ses_plot_components(bundleref b)`
+### `void ses_plot_components(bundle b)`
 
 Plots the level and the irregular component (one-step forecast errors).
 
@@ -70,7 +83,6 @@ Plots the level and the irregular component (one-step forecast errors).
 
 Returns a matrix with the lower and upper bounds (`Lo80`, `Hi80`, `Lo95`,
 `Hi95`) of the forecast intervals; requires forecasts beyond the training range.
-
 
 ## Reference
 
