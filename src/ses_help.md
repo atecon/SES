@@ -5,7 +5,7 @@ Simple exponential smoothing (ETS(A,N,N)) for gretl, following
 
 The level evolves as
 
-    l_t = alpha * y_t + (1 - alpha) * l_{t-1}
+    l_t = alpha x y_t + (1 - alpha) x l_{t-1}
 
 The one-step forecast of `y_t` is `l_{t-1}`, and all multi-step forecasts are
 flat at the last level. The smoothing parameter `alpha` (restricted to [0,1])
@@ -64,12 +64,6 @@ training range exist. `ci_levels` holds two confidence levels between 50 and 99
 ### `void ses_plot_components(const bundleref b)`
 
 Plots the level and the irregular component (one-step forecast errors).
-
-### `void ses_plot(const bundleref b, int ptype, matrix ci_levels[null])`
-
-Thin wrapper used by gretl's GUI plot menu: `ptype = 1` calls
-`ses_plot_forecast()`, `ptype = 2` calls `ses_plot_components()`. In scripts,
-call those two functions directly.
 
 ### `matrix ses_ci_matrix(const bundle b, matrix ci_levels[null])`
 
