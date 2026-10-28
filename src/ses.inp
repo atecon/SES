@@ -184,8 +184,10 @@ function void ses_plot_forecast (const bundleref b, matrix ci_levels[null])
         hbands = ses_ci_bands(df, c1, c2)
         list P = @yname forecast
         plot P
-            options --time-series --with-lines --bands=hbands
-            printf "set title 'forecast with %d and %d percent intervals'", c1, c2
+            options --time-series --with-lines --single-yaxis --bands=hbands
+            printf "set title 'Forecast with %d and %d percent intervals'", c1, c2
+            literal set key outside below
+            literal set grid
         end plot --output=display
     else
         gnuplot @yname forecast --time --with-lines --output=display
