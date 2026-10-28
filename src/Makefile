@@ -12,11 +12,9 @@ $(PKG).zip: $(PKG).gfn algeria.gdt
 	cd build && zip -qr ../$(PKG).zip $(PKG)
 	rm -rf build
 
-# The help text doubles as the repository's README
-../README.md: $(PKG)_help.md
-	cp $(PKG)_help.md ../README.md
-
 install: $(PKG).gfn
+	# The help text doubles as the repository's README
+	cp $(PKG)_help.md ../README.md
 	rm -f $(GRETLDIR)/$(PKG).gfn
 	mkdir -p $(GRETLDIR)/$(PKG)
 	cp $(PKG).gfn algeria.gdt $(GRETLDIR)/$(PKG)/
