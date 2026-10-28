@@ -432,7 +432,12 @@ endif
 
 scalar SSE
 if free_alpha
-  matrix bounds = {1, 0, 1}
+  # BFGScmin misbehaves with a lower bound of exactly 0 in gretl &lt;= 2026c
+  scalar lo = 0
+  if $version &lt;= 20262
+    lo = 1e-6
+  endif
+  matrix bounds = {1, lo, 1}
   catch SSE = BFGScmin(&amp;p, bounds, ses_crit(p, my, theta0, idx))
 else
   catch SSE = BFGSmin(&amp;p, ses_crit(p, my, theta0, idx))
