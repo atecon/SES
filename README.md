@@ -69,13 +69,13 @@ the flat multi-step forecast beyond it. `stderr` follows Hyndman and Athanasopou
 With gretl 2026b or later the bundle also holds the virtual series `level`,
 `fcast` and `irreg`, e.g. `series fc = b.fcast`.
 
-### `void ses_plot_forecast(bundleref b, matrix ci_levels[null])`
+### `void ses_plot_forecast(bundle b, matrix ci_levels[null])`
 
 Plots actual and forecast values, with confidence bands if forecasts beyond the
 training range exist. `ci_levels` holds two confidence levels between 50 and 99
 (default `{80, 95}`).
 
-### `void ses_plot_components(bundleref b)`
+### `void ses_plot_components(bundle b)`
 
 Plots the level and the irregular component (one-step forecast errors).
 
