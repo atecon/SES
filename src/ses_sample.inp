@@ -16,8 +16,8 @@ bundle b2 = ses(Exports, opts)
 dataset addobs 5
 bundle b3 = ses(Exports)
 print ses_ci_matrix(b3)
-ses_plot_forecast(&b3)
-ses_plot_components(&b3)
+ses_plot_forecast(b3)
+ses_plot_components(b3)
 
 # Out-of-sample forecasts and level as series
 series fc = b3.fcast
