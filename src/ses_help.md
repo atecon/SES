@@ -1,7 +1,6 @@
 # Simple exponential smoothing (SES)
 
-Simple exponential smoothing (ETS(A,N,N)) for gretl, following
-[fpp3, section 8.1](https://otexts.com/fpp3/ses.html).
+Simple exponential smoothing (ETS(A,N,N)) for gretl, following Hyndman and Athanasopoulos (Sec. 8.1, 2021) (https://otexts.com/fpp3/ses.html).
 
 The level evolves as
 
@@ -16,7 +15,7 @@ Requires time-series data and gretl 2024c or later.
 
 ## Graphical interface
 
-Available under *Variable > Filter > SES*. With `parms` set to `automatic`, `alpha` is estimated; with `pre-specified` the given `alpha` is used. The initial level is always estimated. `ntest` and `verbose` as above.
+Available under *Variable > Filter > SES*. With parameters set to `automatic`, `alpha` is estimated; with `pre-specified` the given `alpha` is used. The initial level is always estimated. `ntest` and `verbose` as above.
 
 
 ## Public functions
@@ -25,12 +24,10 @@ Available under *Variable > Filter > SES*. With `parms` set to `automatic`, `alp
 
 Estimates the model and returns a bundle. Optional keys of `specs`:
 
-| key       | description                                                          | default |
-|-----------|----------------------------------------------------------------------|---------|
-| `alpha`   | Fixed smoothing parameter in [0,1]; if absent, it is estimated       | -       |
-| `init`    | Fixed initial level `l_0`; if absent, it is estimated                | -       |
-| `ntest`   | Number of trailing observations held back to test the forecasts      | 0       |
-| `verbose` | Verbosity, 0 to 3                                                    | 1       |
+- `alpha`: Fixed smoothing parameter in [0,1]; if absent, it is estimated (default: none).
+- `init`: Fixed initial level `l_0`; if absent, it is estimated (default: none).
+- `ntest`: Number of trailing observations held back to test the forecasts (default: 0).
+- `verbose`: Verbosity, 0 to 3 (default: 1).
 
 The training range is the contiguous non-missing range of `y`, minus the last
 `ntest` observations. If `ntest` is 0 and the sample contains observations
@@ -39,19 +36,17 @@ forecasts are computed for them. Missing values inside `y` are an error.
 
 Returned bundle:
 
-| key          | description                                                         |
-|--------------|---------------------------------------------------------------------|
-| `alpha`      | Smoothing parameter                                                 |
-| `l0`         | Initial level                                                       |
-| `theta`      | Vector (alpha, l0)                                                  |
-| `SSE`        | Training sum of squared one-step errors                             |
-| `RMSE_train` | Training root mean squared error                                    |
-| `MAE_train`  | Training mean absolute error                                        |
-| `RMSE_test`, `MAE_test` | Test statistics, only if `ntest > 0`                     |
-| `H`          | Matrix with columns `y`, `level`, `forecast` and, if there are forecasts beyond the training range, `stderr` |
-| `ntest`      | Number of test observations                                         |
-| `yname`      | Name of the series                                                  |
-| `limits`     | Vector (start of training, end of training, end of forecasts)       |
+- `alpha`: Smoothing parameter.
+- `l0`: Initial level.
+- `theta`: Vector (alpha, l0).
+- `SSE`: Training sum of squared one-step errors.
+- `RMSE_train`: Training root mean squared error.
+- `MAE_train`: Training mean absolute error.
+- `RMSE_test`, `MAE_test`: Test statistics, only if `ntest > 0`.
+- `H`: Matrix with columns `y`, `level`, `forecast` and, if there are forecasts beyond the training range, `stderr`.
+- `ntest`: Number of test observations.
+- `yname`: Name of the series.
+- `limits`: Vector (start of training, end of training, end of forecasts).
 
 In `H`, `forecast` is the one-step-ahead forecast inside the training range and
 the flat multi-step forecast beyond it. `stderr` follows fpp3 (section 8.7):
